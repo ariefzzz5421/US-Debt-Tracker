@@ -15,6 +15,9 @@ test("dashboard keeps official-source and estimate semantics explicit", async ()
   assert.match(dashboard, /backward-looking average, not a Treasury forecast/);
   assert.match(dashboard, /No substitute number is being shown/);
   assert.match(route, /api\.fiscaldata\.treasury\.gov/);
+  assert.match(route, /slt_table5\.txt/);
+  assert.match(route, /daily_treasury_real_yield_curve/);
+  assert.match(route, /slice\(0, 10\)/);
   assert.match(route, /status: "unavailable"/);
   assert.match(route, /No replacement number has been invented/);
 });
@@ -28,6 +31,8 @@ test("dashboard includes the core detail sections", async () => {
   for (const heading of [
     "Who holds the debt?",
     "Debt over time",
+    "Who holds Treasuries?",
+    "10-YEAR TIPS REAL YIELD",
     "Why markets care",
     "Official first. Estimate second.",
   ]) {

@@ -9,10 +9,12 @@ A detailed U.S. national debt tracker powered by the official [U.S. Treasury Deb
 - Daily, 30-day, and 12-month changes
 - Debt per U.S. resident using the Census January 1, 2026 estimate
 - Debt held by the public vs. intragovernmental holdings
+- Top 10 foreign holders from the monthly Treasury TIC table, with exact USD values and month-over-month changes
+- Latest official 10-year TIPS real yield plus the 5Y–30Y real yield curve
 - Interactive 30-day, 90-day, and one-year history
 - Plain-language market context and transparent methodology
 
-The official debt figure is published after each U.S. business day. The moving counter is clearly labeled as an estimate and can be turned off.
+The official debt figure and TIPS real yields are published after U.S. business days. Foreign-holder data is monthly and published with a reporting lag. The moving debt counter is clearly labeled as an estimate and can be turned off.
 
 ## Local development
 

@@ -16,6 +16,34 @@ type DebtPayload = {
   cadence?: string;
   notice?: string;
   records: DebtRecord[];
+  foreignHolders?:
+    | {
+        status: "official";
+        asOf: string;
+        previousPeriod: string;
+        totalForeign: number;
+        unit: "USD";
+        source: string;
+        cadence: string;
+        countries: Array<{
+          rank: number;
+          name: string;
+          value: number;
+          previousValue: number;
+        }>;
+      }
+    | { status: "unavailable"; source: string; notice: string };
+  realYields?:
+    | {
+        status: "official";
+        asOf: string;
+        tenYear: number;
+        tenYearDailyChangeBps: number;
+        source: string;
+        cadence: string;
+        curve: Array<{ tenor: string; value: number }>;
+      }
+    | { status: "unavailable"; source: string; notice: string };
 };
 
 type RangeKey = "30D" | "90D" | "1Y";
@@ -26,6 +54,10 @@ const FISCAL_SOURCE =
   "https://fiscaldata.treasury.gov/datasets/debt-to-the-penny/";
 const CENSUS_SOURCE =
   "https://www.census.gov/popclock/embed.php?component=pop_on_date&date=20260101";
+const TIC_SOURCE =
+  "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table5.html";
+const REAL_YIELD_SOURCE =
+  "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve";
 
 function formatMoney(value: number, maximumFractionDigits = 0) {
   return new Intl.NumberFormat("en-US", {
@@ -47,6 +79,22 @@ function formatCompactMoney(value: number) {
 function formatSignedMoney(value: number) {
   const sign = value >= 0 ? "+" : "−";
   return `${sign}${formatCompactMoney(Math.abs(value))}`;
+}
+
+function formatBillions(value: number) {
+  return `$${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  }).format(value / 1_000_000_000)}B`;
+}
+
+function periodLabel(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
 function dateLabel(value: string) {
@@ -179,6 +227,10 @@ export function DebtDashboard() {
   const displayedTotal = showEstimate
     ? stats.estimatedTotal
     : stats.officialTotal;
+  const holders = payload?.foreignHolders;
+  const realYields = payload?.realYields;
+  const largestHolding =
+    holders?.status === "official" ? holders.countries[0]?.value ?? 1 : 1;
 
   return (
     <main>
@@ -189,6 +241,7 @@ export function DebtDashboard() {
         </a>
         <nav aria-label="Primary navigation">
           <a href="#breakdown">Breakdown</a>
+          <a href="#holders">Holders</a>
           <a href="#history">History</a>
           <a href="#methodology">Method</a>
         </nav>
@@ -391,10 +444,117 @@ export function DebtDashboard() {
         </div>
       </section>
 
+      <section className="section holders-section" id="holders">
+        <div className="section-heading">
+          <div>
+            <span className="section-index">03 / GLOBAL HOLDERS + REAL RATES</span>
+            <h2>Who holds Treasuries?</h2>
+          </div>
+          <p>
+            The latest foreign-holder snapshot beside the market&apos;s current inflation-adjusted Treasury yield.
+          </p>
+        </div>
+
+        <div className="holders-layout">
+          <article className="leaderboard-card">
+            <div className="leaderboard-head">
+              <div>
+                <span>TOP 10 FOREIGN HOLDERS</span>
+                <strong>
+                  {holders?.status === "official"
+                    ? periodLabel(holders.asOf)
+                    : "Official data unavailable"}
+                </strong>
+              </div>
+              {holders?.status === "official" ? (
+                <div className="total-foreign">
+                  <span>ALL FOREIGN HOLDERS</span>
+                  <strong>{formatBillions(holders.totalForeign)}</strong>
+                </div>
+              ) : null}
+            </div>
+
+            {holders?.status === "official" ? (
+              <div className="holder-list">
+                {holders.countries.map((country) => {
+                  const change = country.value - country.previousValue;
+                  return (
+                    <div className="holder-row" key={country.name}>
+                      <span className="holder-rank">{String(country.rank).padStart(2, "0")}</span>
+                      <div className="holder-country">
+                        <div className="holder-label">
+                          <strong>{country.name}</strong>
+                          <small className={change < 0 ? "down" : "up"}>
+                            {formatSignedMoney(change)} MoM
+                          </small>
+                        </div>
+                        <div className="holder-track" aria-hidden="true">
+                          <span style={{ width: `${(country.value / largestHolding) * 100}%` }} />
+                        </div>
+                      </div>
+                      <strong className="holder-value">{formatBillions(country.value)}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="supplement-unavailable">
+                {holders?.notice ?? "Waiting for the official Treasury TIC table."}
+              </div>
+            )}
+          </article>
+
+          <aside className="real-rate-card">
+            <div className="real-rate-head">
+              <span>10-YEAR TIPS REAL YIELD</span>
+              <a href={REAL_YIELD_SOURCE} target="_blank" rel="noreferrer">Official feed ↗</a>
+            </div>
+            {realYields?.status === "official" ? (
+              <>
+                <div className="real-rate-value">
+                  <strong>{realYields.tenYear.toFixed(2)}%</strong>
+                  <span className={realYields.tenYearDailyChangeBps < 0 ? "down" : "up"}>
+                    {realYields.tenYearDailyChangeBps >= 0 ? "+" : ""}
+                    {realYields.tenYearDailyChangeBps} bps daily
+                  </span>
+                </div>
+                <p className="rate-date">Official close · {dateLabel(realYields.asOf)}</p>
+                <div className="yield-curve" aria-label="Treasury real yield curve">
+                  {realYields.curve.map((point) => (
+                    <div key={point.tenor}>
+                      <span>{point.tenor}</span>
+                      <strong>{point.value.toFixed(2)}%</strong>
+                    </div>
+                  ))}
+                </div>
+                <div className="rate-explainer">
+                  <strong>What this means</strong>
+                  <p>
+                    This is the market real yield on inflation-protected Treasuries—not the Fed policy rate minus today&apos;s CPI. A positive 10Y real yield means investors can lock in a yield above future CPI adjustments before tax and trading costs.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="supplement-unavailable">
+                {realYields?.notice ?? "Waiting for the official Treasury real-yield feed."}
+              </div>
+            )}
+          </aside>
+        </div>
+
+        <div className="holding-note">
+          <strong>READ THE RANKING CAREFULLY</strong>
+          <p>
+            TIC values are monthly and shown in USD. They are largely reported by U.S. custodians and broker-dealers, so a custody center such as Belgium, Luxembourg, or the Cayman Islands may not reveal the ultimate beneficial owner.
+          </p>
+          <a href={TIC_SOURCE} target="_blank" rel="noreferrer">Treasury TIC methodology ↗</a>
+        </div>
+      </section>
+
       <section className="section market-section">
         <div className="section-heading">
           <div>
-            <span className="section-index">03 / MARKET LENS</span>
+            <span className="section-index">04 / MARKET LENS</span>
             <h2>Why markets care</h2>
           </div>
           <p>Debt alone is not a buy or sell signal. The path from borrowing to markets runs through rates, growth, inflation, and policy.</p>
@@ -413,12 +573,12 @@ export function DebtDashboard() {
       <section className="section method-section" id="methodology">
         <div className="section-heading">
           <div>
-            <span className="section-index">04 / METHODOLOGY</span>
+            <span className="section-index">05 / METHODOLOGY</span>
             <h2>Official first. Estimate second.</h2>
           </div>
         </div>
         <div className="method-grid">
-          <article><span>1</span><div><h3>Fetch</h3><p>The server requests up to 400 daily observations from Treasury’s “Debt to the Penny” dataset and caches them for one hour.</p></div></article>
+          <article><span>1</span><div><h3>Fetch</h3><p>The server requests daily debt, monthly foreign holdings, and the daily TIPS real-yield curve directly from official U.S. Treasury feeds.</p></div></article>
           <article><span>2</span><div><h3>Verify</h3><p>Every row must include a date, total debt, debt held by the public, and intragovernmental holdings. Invalid rows are discarded.</p></div></article>
           <article><span>3</span><div><h3>Estimate</h3><p>The optional moving counter extends the latest official total using the trailing 30-day average change, capped at four days.</p></div></article>
           <article><span>4</span><div><h3>Fail honestly</h3><p>If detailed data fails, the site tries TreasuryDirect for the official total. If both fail, it shows “unavailable” instead of stale or invented data.</p></div></article>
@@ -426,6 +586,8 @@ export function DebtDashboard() {
         <div className="source-box">
           <div><span>PRIMARY SOURCE</span><strong>U.S. Treasury Bureau of the Fiscal Service</strong></div>
           <a href={FISCAL_SOURCE} target="_blank" rel="noreferrer">Open dataset ↗</a>
+          <a href={TIC_SOURCE} target="_blank" rel="noreferrer">Foreign holders ↗</a>
+          <a href={REAL_YIELD_SOURCE} target="_blank" rel="noreferrer">Real yields ↗</a>
           <a href={CENSUS_SOURCE} target="_blank" rel="noreferrer">Population input ↗</a>
         </div>
       </section>
