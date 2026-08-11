@@ -1,0 +1,18 @@
+{
+  "generatedAt": "2026-08-11T20:05:00+07:00",
+  "scope": "component enhancement",
+  "framework": "Next.js 16.3 App Router",
+  "audience": "macro readers and traders inspecting official U.S. debt data",
+  "useCase": "explore official daily observations and compare foreign Treasury holders",
+  "genre": "editorial",
+  "tone": "technical-austere",
+  "existingSystem": {
+    "fonts": ["Geist", "Geist Mono"],
+    "palette": ["near-black", "warm paper", "signal orange", "status lime"],
+    "spacing": "existing 4–8 px terminal rhythm",
+    "motion": "CSS only, restrained state transitions"
+  },
+  "referenceOwnership": "user-owned live application screenshots",
+  "preserved": ["navigation", "hero hierarchy", "section order", "official data semantics"],
+  "changed": ["chart interaction", "country flags", "USD equivalents", "brand logo"]
+}

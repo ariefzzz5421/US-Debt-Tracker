@@ -21,6 +21,10 @@ export const metadata: Metadata = {
   title: "Debt Clock — U.S. National Debt Tracker",
   description:
     "Track the latest official U.S. national debt, daily changes, composition, and market context using U.S. Treasury Fiscal Data.",
+  icons: {
+    icon: [{ url: "/brand/debt-clock-logo.png", type: "image/png" }],
+    apple: [{ url: "/brand/debt-clock-logo.png", type: "image/png" }],
+  },
   openGraph: {
     title: "Debt Clock — U.S. National Debt Tracker",
     description: "The U.S. debt, down to the dollar. Official daily Treasury data.",

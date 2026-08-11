@@ -39,3 +39,20 @@ test("dashboard includes the core detail sections", async () => {
     assert.match(dashboard, new RegExp(heading.replace(/[?.]/g, "\\$&")));
   }
 });
+
+test("chart, country flags, equivalent values, and new logo are wired into the UI", async () => {
+  const [dashboard, layout] = await Promise.all([
+    readFile(new URL("app/components/DebtDashboard.tsx", root), "utf8"),
+    readFile(new URL("app/layout.tsx", root), "utf8"),
+  ]);
+
+  assert.match(dashboard, /role="slider"/);
+  assert.match(dashboard, /onPointerMove=\{handleChartPointer\}/);
+  assert.match(dashboard, /onKeyDown=\{handleChartKeyboard\}/);
+  assert.match(dashboard, /\/flags\/us\.png/);
+  assert.match(dashboard, /COUNTRY_FLAG_PATHS/);
+  assert.match(dashboard, /formatTrillions/);
+  assert.match(dashboard, /equivalent USD/);
+  assert.match(dashboard, /\/brand\/debt-clock-logo\.png/);
+  assert.match(layout, /\/brand\/debt-clock-logo\.png/);
+});

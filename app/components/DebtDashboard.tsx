@@ -1,5 +1,11 @@
 "use client";
 
+import Image from "next/image";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type DebtRecord = {
@@ -58,6 +64,20 @@ const TIC_SOURCE =
   "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table5.html";
 const REAL_YIELD_SOURCE =
   "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/TextView?type=daily_treasury_real_yield_curve";
+const COUNTRY_FLAG_PATHS: Record<string, string> = {
+  Belgium: "/flags/be.png",
+  Canada: "/flags/ca.png",
+  "Cayman Islands": "/flags/ky.png",
+  "China, Mainland": "/flags/cn.png",
+  France: "/flags/fr.png",
+  Ireland: "/flags/ie.png",
+  Japan: "/flags/jp.png",
+  Luxembourg: "/flags/lu.png",
+  Taiwan: "/flags/tw.png",
+  "United Kingdom": "/flags/gb.png",
+};
+
+type ChartStyle = CSSProperties & { "--active-position": string };
 
 function formatMoney(value: number, maximumFractionDigits = 0) {
   return new Intl.NumberFormat("en-US", {
@@ -86,6 +106,13 @@ function formatBillions(value: number) {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(value / 1_000_000_000)}B`;
+}
+
+function formatTrillions(value: number) {
+  return `$${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 2,
+  }).format(value / 1_000_000_000_000)}T`;
 }
 
 function periodLabel(value: string) {
@@ -135,6 +162,7 @@ export function DebtDashboard() {
   const [clock, setClock] = useState(0);
   const [showEstimate, setShowEstimate] = useState(true);
   const [range, setRange] = useState<RangeKey>("90D");
+  const [chartPointIndex, setChartPointIndex] = useState<number | null>(null);
 
   const loadDebt = useCallback(async () => {
     setLoading(true);
@@ -205,7 +233,7 @@ export function DebtDashboard() {
 
   const chart = useMemo(() => {
     if (chartRecords.length < 2) return [];
-    const maxPoints = 72;
+    const maxPoints = 96;
     const stride = Math.max(1, Math.ceil(chartRecords.length / maxPoints));
     const sampled = chartRecords.filter(
       (_, index) => index % stride === 0 || index === chartRecords.length - 1,
@@ -231,12 +259,70 @@ export function DebtDashboard() {
   const realYields = payload?.realYields;
   const largestHolding =
     holders?.status === "official" ? holders.countries[0]?.value ?? 1 : 1;
+  const activeChartIndex =
+    chart.length > 0
+      ? Math.min(chartPointIndex ?? chart.length - 1, chart.length - 1)
+      : -1;
+  const activeChartPoint =
+    activeChartIndex >= 0 ? chart[activeChartIndex] : null;
+  const activeChartPrevious =
+    activeChartIndex > 0 ? chart[activeChartIndex - 1] : null;
+  const activeChartChange =
+    activeChartPoint && activeChartPrevious
+      ? activeChartPoint.totalDebt - activeChartPrevious.totalDebt
+      : null;
+  const chartStyle = {
+    "--active-position": `${
+      chart.length > 1 ? (activeChartIndex / (chart.length - 1)) * 100 : 100
+    }%`,
+  } as ChartStyle;
+
+  const updateChartPoint = (clientX: number, element: HTMLDivElement) => {
+    if (chart.length < 2) return;
+    const bounds = element.getBoundingClientRect();
+    const ratio = Math.max(
+      0,
+      Math.min(1, (clientX - bounds.left) / bounds.width),
+    );
+    setChartPointIndex(Math.round(ratio * (chart.length - 1)));
+  };
+
+  const handleChartPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    updateChartPoint(event.clientX, event.currentTarget);
+  };
+
+  const handleChartKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (chart.length < 2) return;
+    const current = activeChartIndex < 0 ? chart.length - 1 : activeChartIndex;
+    const keyTarget =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? chart.length - 1
+          : event.key === "ArrowLeft"
+            ? Math.max(0, current - 1)
+            : event.key === "ArrowRight"
+              ? Math.min(chart.length - 1, current + 1)
+              : null;
+    if (keyTarget === null) return;
+    event.preventDefault();
+    setChartPointIndex(keyTarget);
+  };
 
   return (
     <main>
       <header className="site-header">
         <a className="brand" href="#top" aria-label="Debt Clock home">
-          <span className="brand-mark" aria-hidden="true">D</span>
+          <span className="brand-mark" aria-hidden="true">
+            <Image
+              className="brand-logo"
+              src="/brand/debt-clock-logo.png"
+              alt=""
+              width={32}
+              height={32}
+              priority
+            />
+          </span>
           <span>DEBT//CLOCK</span>
         </a>
         <nav aria-label="Primary navigation">
@@ -269,7 +355,17 @@ export function DebtDashboard() {
         </div>
 
         <div className="hero-copy">
-          <p>UNITED STATES NATIONAL DEBT</p>
+          <p className="hero-kicker">
+            <Image
+              className="country-flag hero-flag"
+              src="/flags/us.png"
+              alt="United States flag"
+              width={30}
+              height={20}
+              priority
+            />
+            <span>UNITED STATES NATIONAL DEBT</span>
+          </p>
           <h1 aria-live="polite">
             {loading ? "$—" : error ? "DATA UNAVAILABLE" : formatMoney(displayedTotal, 0)}
           </h1>
@@ -402,7 +498,10 @@ export function DebtDashboard() {
                 key={item}
                 type="button"
                 className={range === item ? "active" : ""}
-                onClick={() => setRange(item)}
+                onClick={() => {
+                  setRange(item);
+                  setChartPointIndex(null);
+                }}
                 aria-pressed={range === item}
               >
                 {item}
@@ -417,24 +516,78 @@ export function DebtDashboard() {
               <span>PERIOD CHANGE</span>
               <strong>
                 {chartRecords.length > 1
-                  ? formatSignedMoney(chartRecords.at(-1)!.totalDebt - chartRecords[0].totalDebt)
+                  ? formatSignedMoney(
+                      chartRecords.at(-1)!.totalDebt - chartRecords[0].totalDebt,
+                    )
                   : "—"}
               </strong>
             </div>
-            <p>Each bar is an official daily observation. Weekends and federal holidays may have no new record.</p>
+            <div className="chart-inspector" aria-live="polite">
+              <span>ACTIVE OBSERVATION</span>
+              <strong>
+                {activeChartPoint ? dateLabel(activeChartPoint.recordDate) : "—"}
+              </strong>
+              <em>
+                {activeChartPoint
+                  ? formatMoney(activeChartPoint.totalDebt)
+                  : "—"}
+              </em>
+              <small
+                className={
+                  activeChartChange !== null && activeChartChange < 0
+                    ? "down"
+                    : "up"
+                }
+              >
+                {activeChartChange === null
+                  ? "First plotted observation"
+                  : `${formatSignedMoney(activeChartChange)} vs. prior plot`}
+              </small>
+            </div>
           </div>
-          <div className="chart" aria-label={`${range} U.S. debt history chart`}>
+          <p className="chart-help">
+            Move, tap, or use ← → to inspect an official observation. Weekends
+            and federal holidays may have no new record.
+          </p>
+          <div
+            className="chart"
+            role="slider"
+            tabIndex={chart.length > 1 ? 0 : -1}
+            aria-disabled={chart.length <= 1}
+            aria-label={`${range} U.S. debt history chart explorer`}
+            aria-valuemin={1}
+            aria-valuemax={Math.max(1, chart.length)}
+            aria-valuenow={Math.max(1, activeChartIndex + 1)}
+            aria-valuetext={
+              activeChartPoint
+                ? `${dateLabel(activeChartPoint.recordDate)}, ${formatMoney(activeChartPoint.totalDebt)}`
+                : "No chart data"
+            }
+            onPointerMove={handleChartPointer}
+            onPointerDown={handleChartPointer}
+            onKeyDown={handleChartKeyboard}
+            style={chartStyle}
+          >
             {chart.length > 1 ? (
-              chart.map((point) => (
-                <div
-                  className="chart-column"
-                  key={point.recordDate}
-                  style={{ height: `${point.height}%` }}
-                  title={`${dateLabel(point.recordDate)} — ${formatMoney(point.totalDebt)}`}
-                />
-              ))
+              <>
+                <span className="chart-cursor" aria-hidden="true" />
+                {chart.map((point, index) => (
+                  <div
+                    className={
+                      index === activeChartIndex
+                        ? "chart-column active"
+                        : "chart-column"
+                    }
+                    key={point.recordDate}
+                    style={{ height: `${point.height}%` }}
+                    aria-hidden="true"
+                  />
+                ))}
+              </>
             ) : (
-              <div className="chart-empty">Detailed history will appear when the Treasury data feed responds.</div>
+              <div className="chart-empty">
+                Detailed history will appear when the Treasury data feed responds.
+              </div>
             )}
           </div>
           <div className="chart-axis">
@@ -469,7 +622,11 @@ export function DebtDashboard() {
               {holders?.status === "official" ? (
                 <div className="total-foreign">
                   <span>ALL FOREIGN HOLDERS</span>
-                  <strong>{formatBillions(holders.totalForeign)}</strong>
+                  <strong>
+                    {formatBillions(holders.totalForeign)} /{" "}
+                    {formatTrillions(holders.totalForeign)}
+                  </strong>
+                  <small>equivalent USD</small>
                 </div>
               ) : null}
             </div>
@@ -483,7 +640,18 @@ export function DebtDashboard() {
                       <span className="holder-rank">{String(country.rank).padStart(2, "0")}</span>
                       <div className="holder-country">
                         <div className="holder-label">
-                          <strong>{country.name}</strong>
+                          <span className="holder-identity">
+                            {COUNTRY_FLAG_PATHS[country.name] ? (
+                              <Image
+                                className="country-flag holder-flag"
+                                src={COUNTRY_FLAG_PATHS[country.name]}
+                                alt=""
+                                width={28}
+                                height={18}
+                              />
+                            ) : null}
+                            <strong>{country.name}</strong>
+                          </span>
                           <small className={change < 0 ? "down" : "up"}>
                             {formatSignedMoney(change)} MoM
                           </small>
@@ -492,7 +660,13 @@ export function DebtDashboard() {
                           <span style={{ width: `${(country.value / largestHolding) * 100}%` }} />
                         </div>
                       </div>
-                      <strong className="holder-value">{formatBillions(country.value)}</strong>
+                      <strong className="holder-value">
+                        <span>
+                          {formatBillions(country.value)} /{" "}
+                          {formatTrillions(country.value)}
+                        </span>
+                        <small>equivalent USD</small>
+                      </strong>
                     </div>
                   );
                 })}
@@ -593,7 +767,18 @@ export function DebtDashboard() {
       </section>
 
       <footer>
-        <a className="brand" href="#top"><span className="brand-mark">D</span><span>DEBT//CLOCK</span></a>
+        <a className="brand" href="#top" aria-label="Debt Clock home">
+          <span className="brand-mark" aria-hidden="true">
+            <Image
+              className="brand-logo"
+              src="/brand/debt-clock-logo.png"
+              alt=""
+              width={32}
+              height={32}
+            />
+          </span>
+          <span>DEBT//CLOCK</span>
+        </a>
         <p>Independent public-data interface. Not affiliated with the U.S. government.</p>
         <span>{payload ? `Last checked ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(payload.fetchedAt))}` : "Awaiting official source"}</span>
       </footer>

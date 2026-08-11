@@ -38,3 +38,9 @@ yarn-error.log*
 /.wrangler/
 /outputs/
 /work/
+
+# Generated logo working file; the transparent production asset is committed.
+/public/brand/*-source.png
+
+# Local browser verification artifacts.
+/.playwright-cli/

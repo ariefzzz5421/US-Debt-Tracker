@@ -1,0 +1,39 @@
+:root {
+  --ink: oklch(0.15 0.006 145);
+  --panel: oklch(0.18 0.008 145);
+  --panel-soft: oklch(0.21 0.008 145);
+  --line: oklch(0.29 0.008 145);
+  --muted: oklch(0.68 0.012 145);
+  --paper: oklch(0.94 0.018 92);
+  --orange: oklch(0.69 0.21 38);
+  --orange-soft: oklch(0.77 0.15 42);
+  --orange-pale: oklch(0.82 0.12 45);
+  --lime: oklch(0.89 0.2 126);
+  --red: oklch(0.7 0.2 28);
+
+  --surface-glass: color-mix(in oklch, var(--panel) 82%, transparent);
+  --surface-hero-stat: color-mix(in oklch, var(--ink) 85%, transparent);
+  --surface-section: oklch(0.165 0.006 145);
+  --surface-holders: oklch(0.155 0.006 145);
+  --surface-note: oklch(0.19 0.008 145);
+  --surface-risk: oklch(0.22 0.035 35);
+  --surface-error: oklch(0.25 0.055 28);
+  --surface-warning: oklch(0.24 0.04 75);
+  --line-strong: oklch(0.38 0.01 145);
+  --line-risk: oklch(0.4 0.06 35);
+  --line-error: oklch(0.43 0.08 28);
+  --line-warning: oklch(0.42 0.07 75);
+  --text-subtle: oklch(0.55 0.012 145);
+  --text-dim: oklch(0.48 0.012 145);
+  --text-alert: oklch(0.76 0.02 70);
+  --text-method: oklch(0.48 0.012 145);
+  --method-accent: oklch(0.58 0.19 37);
+  --method-line: oklch(0.81 0.02 90);
+  --accent-wash: color-mix(in oklch, var(--orange) 8%, transparent);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-medium: 500ms;
+  --duration-slow: 800ms;
+  --z-sticky: 20;
+}
