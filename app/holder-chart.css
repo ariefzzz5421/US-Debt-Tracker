@@ -1,0 +1,323 @@
+.fx-card {
+  overflow: hidden;
+  contain: layout paint;
+}
+
+.fx-card-head {
+  align-items: flex-start;
+}
+
+.fx-card-head h2 {
+  margin-bottom: 0;
+}
+
+.fx-market-summary {
+  margin-top: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-geist-mono), monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-market-summary > strong {
+  font-size: clamp(24px, 4vw, 42px);
+  font-weight: 520;
+  letter-spacing: -.045em;
+}
+
+.fx-market-summary > span {
+  font-size: 11px;
+}
+
+.fx-market-summary > small {
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+
+.fx-toolbar {
+  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, #111722 84%, var(--panel));
+}
+
+.fx-chart-mode {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fx-chart-mode-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--line-strong);
+  color: var(--orange);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 17px;
+}
+
+.fx-chart-mode strong,
+.fx-chart-mode small {
+  display: block;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.fx-chart-mode strong {
+  color: var(--paper);
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+
+.fx-chart-mode small {
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 8px;
+}
+
+.fx-timeframe-control {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(132px, auto);
+  align-items: center;
+  gap: 9px;
+}
+
+.fx-timeframe-control > span {
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  letter-spacing: .08em;
+}
+
+.fx-timeframe-control select {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: #0d121b;
+  color: var(--paper);
+  padding: 7px 30px 7px 10px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  outline: none;
+  cursor: pointer;
+  color-scheme: dark;
+}
+
+.fx-timeframe-control select:hover,
+.fx-timeframe-control select:focus-visible {
+  border-color: var(--orange);
+}
+
+.fx-chart-wrap {
+  margin-top: 18px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 85%, #263244);
+  background: #111722;
+}
+
+.fx-chart-interactive {
+  height: clamp(300px, 47vw, 470px);
+  background:
+    linear-gradient(rgba(255,255,255,.018), rgba(255,255,255,.018)),
+    #111722;
+}
+
+.fx-chart-plot {
+  inset: 0 92px 0 0;
+  overflow: hidden;
+  touch-action: pan-y;
+  cursor: crosshair;
+}
+
+.fx-chart {
+  overflow: hidden;
+}
+
+.fx-chart .grid-line {
+  stroke: rgba(146, 158, 176, .16);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-chart .grid-line.vertical {
+  stroke: rgba(146, 158, 176, .11);
+}
+
+.fx-chart polyline {
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--orange) 22%, transparent));
+}
+
+.fx-chart .fx-live-line-chart {
+  stroke: color-mix(in srgb, var(--lime) 72%, white 4%);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: .82;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-chart .fx-focus-line,
+.fx-chart .fx-focus-horizontal {
+  stroke: rgba(232, 235, 240, .6);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+
+.fx-y-axis {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 92px;
+  border-left: 1px solid rgba(146, 158, 176, .18);
+  background: #111722;
+  pointer-events: none;
+}
+
+.fx-y-axis span {
+  position: absolute;
+  left: 9px;
+  transform: translateY(-50%);
+  color: #aeb7c5;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fx-price-tag {
+  top: var(--fx-price-position);
+  right: 0;
+  width: 92px;
+  z-index: 4;
+  transform: translateY(-50%);
+  border: 0;
+  border-left: 2px solid var(--lime);
+  background: color-mix(in srgb, var(--lime) 70%, #183027);
+  padding: 7px 8px;
+  color: #f6faf7;
+}
+
+.fx-price-tag span {
+  color: rgba(255,255,255,.72);
+  font-size: 6.5px;
+  letter-spacing: .07em;
+}
+
+.fx-price-tag strong {
+  margin: 2px 0 0;
+  color: white;
+  font-size: 12px;
+}
+
+.fx-time-axis {
+  min-height: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  padding: 0 92px 0 0;
+  border-top: 1px solid rgba(146, 158, 176, .18);
+  background: #111722;
+  color: #8792a2;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fx-time-axis span {
+  flex: 1 1 0;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.fx-source {
+  max-width: 900px;
+}
+
+@media (hover: none) {
+  .fx-chart-plot { cursor: default; }
+}
+
+@media (max-width: 620px) {
+  .fx-card {
+    padding: 18px 14px;
+  }
+
+  .fx-card-head {
+    gap: 14px;
+  }
+
+  .fx-market-summary {
+    flex-wrap: wrap;
+  }
+
+  .fx-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 11px;
+  }
+
+  .fx-timeframe-control {
+    width: 100%;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .fx-timeframe-control select {
+    width: 100%;
+  }
+
+  .fx-chart-interactive {
+    height: 330px;
+  }
+
+  .fx-chart-plot {
+    right: 70px;
+  }
+
+  .fx-y-axis,
+  .fx-price-tag {
+    width: 70px;
+  }
+
+  .fx-y-axis span {
+    left: 6px;
+    font-size: 6.7px;
+  }
+
+  .fx-price-tag {
+    padding: 6px 5px;
+  }
+
+  .fx-price-tag strong {
+    font-size: 9.5px;
+  }
+
+  .fx-price-tag span {
+    font-size: 5.8px;
+  }
+
+  .fx-time-axis {
+    min-height: 28px;
+    padding-right: 70px;
+    font-size: 6px;
+  }
+
+  .fx-time-axis span:nth-child(even) {
+    display: none;
+  }
+}
