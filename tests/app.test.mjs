@@ -6,7 +6,7 @@ const root = new URL("../", import.meta.url);
 
 test("dashboard keeps official-source and estimate semantics explicit", async () => {
   const [dashboard, route] = await Promise.all([
-    readFile(new URL("app/components/DebtDashboard.tsx", root), "utf8"),
+    readFile(new URL("app/components/DebtDashboardEnhanced.tsx", root), "utf8"),
     readFile(new URL("app/api/debt/route.ts", root), "utf8"),
   ]);
 
@@ -22,37 +22,47 @@ test("dashboard keeps official-source and estimate semantics explicit", async ()
   assert.match(route, /No replacement number has been invented/);
 });
 
-test("dashboard includes the core detail sections", async () => {
+test("dashboard includes long history, mobile dragging, holder drilldowns, and EFFR", async () => {
   const dashboard = await readFile(
-    new URL("app/components/DebtDashboard.tsx", root),
+    new URL("app/components/DebtDashboardEnhanced.tsx", root),
     "utf8",
   );
 
-  for (const heading of [
-    "Who holds the debt?",
-    "Debt over time",
-    "Who holds Treasuries?",
-    "10-YEAR TIPS REAL YIELD",
-    "Why markets care",
-    "Official first. Estimate second.",
-  ]) {
-    assert.match(dashboard, new RegExp(heading.replace(/[?.]/g, "\\$&")));
+  for (const range of ["5Y", "10Y", "30Y", "MAX"]) {
+    assert.match(dashboard, new RegExp(`"${range}"`));
   }
+  assert.match(dashboard, /\/api\/debt\/history\?range=/);
+  assert.match(dashboard, /setPointerCapture/);
+  assert.match(dashboard, /onPointerCancel=\{handleChartPointerEnd\}/);
+  assert.match(dashboard, /\/holders\/\$\{slugify\(country\.name\)\}/);
+  assert.match(dashboard, /EFFECTIVE FEDERAL FUNDS RATE/);
+  assert.match(dashboard, /\/api\/rates/);
 });
 
-test("chart, country flags, equivalent values, and new logo are wired into the UI", async () => {
-  const [dashboard, layout] = await Promise.all([
-    readFile(new URL("app/components/DebtDashboard.tsx", root), "utf8"),
-    readFile(new URL("app/layout.tsx", root), "utf8"),
+test("new endpoints use official Treasury and New York Fed sources plus reference FX", async () => {
+  const [history, holders, rates] = await Promise.all([
+    readFile(new URL("app/api/debt/history/route.ts", root), "utf8"),
+    readFile(new URL("app/api/holders/route.ts", root), "utf8"),
+    readFile(new URL("app/api/rates/route.ts", root), "utf8"),
   ]);
 
-  assert.match(dashboard, /role="slider"/);
-  assert.match(dashboard, /onPointerMove=\{handleChartPointer\}/);
-  assert.match(dashboard, /onKeyDown=\{handleChartKeyboard\}/);
-  assert.match(dashboard, /\/flags\/us\.png/);
-  assert.match(dashboard, /COUNTRY_FLAG_PATHS/);
-  assert.match(dashboard, /formatTrillions/);
-  assert.match(dashboard, /equivalent USD/);
-  assert.match(dashboard, /\/brand\/debt-clock-logo\.png/);
-  assert.match(layout, /\/brand\/debt-clock-logo\.png/);
+  assert.match(history, /debt_to_penny/);
+  assert.match(history, /page\[size\]/);
+  assert.match(holders, /slt_table5\.txt/);
+  assert.match(holders, /api\.frankfurter\.dev/);
+  assert.match(holders, /USD\/\$\{holder\.currency\.code\}/);
+  assert.match(rates, /markets\.newyorkfed\.org/);
+  assert.match(rates, /unsecured\/effr/);
+});
+
+test("holder detail route exposes FX ranges", async () => {
+  const detail = await readFile(
+    new URL("app/components/HolderDetail.tsx", root),
+    "utf8",
+  );
+  assert.match(detail, /1M/);
+  assert.match(detail, /1Y/);
+  assert.match(detail, /5Y/);
+  assert.match(detail, /\/api\/holders\?slug=/);
+  assert.match(detail, /LOCAL CURRENCY VS U\.S\. DOLLAR/);
 });
