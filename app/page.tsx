@@ -1,5 +1,5 @@
-import { DebtDashboard } from "./components/DebtDashboard";
+import { DebtDashboardEnhanced } from "./components/DebtDashboardEnhanced";
 
 export default function Home() {
-  return <DebtDashboard />;
+  return <DebtDashboardEnhanced />;
 }
