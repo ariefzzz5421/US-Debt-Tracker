@@ -4,12 +4,23 @@ import Image from "next/image";
 import { useParams } from "next/navigation";
 import type {
   CSSProperties,
+  ChangeEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-type FxRange = "1M" | "1Y" | "5Y" | "10Y" | "MAX";
+type FxRange =
+  | "1D"
+  | "5D"
+  | "1M"
+  | "3M"
+  | "6M"
+  | "1Y"
+  | "2Y"
+  | "5Y"
+  | "10Y"
+  | "MAX";
 
 type FxRecord = { date: string; rate: number };
 
@@ -48,7 +59,23 @@ type HolderPayload = {
 type FxChartStyle = CSSProperties & {
   "--fx-cursor-position": string;
   "--fx-price-position": string;
+  "--fx-live-position": string;
 };
+
+const FX_TIMEFRAMES: Array<{ value: FxRange; label: string }> = [
+  { value: "1D", label: "1 Day" },
+  { value: "5D", label: "5 Days" },
+  { value: "1M", label: "1 Month" },
+  { value: "3M", label: "3 Months" },
+  { value: "6M", label: "6 Months" },
+  { value: "1Y", label: "1 Year" },
+  { value: "2Y", label: "2 Years" },
+  { value: "5Y", label: "5 Years" },
+  { value: "10Y", label: "10 Years" },
+  { value: "MAX", label: "Maximum" },
+];
+
+const INTRADAY_RANGES = new Set<FxRange>(["1D", "5D"]);
 
 function formatMoney(value: number) {
   return new Intl.NumberFormat("en-US", {
@@ -69,14 +96,67 @@ function dateLabel(value?: string) {
   }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
-function recordDateLabel(value?: string) {
-  if (!value) return "—";
+function parseRecordDate(value?: string) {
+  if (!value) return null;
+  const parsed = new Date(value.includes("T") ? value : `${value}T00:00:00Z`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function recordDateLabel(value?: string, range?: FxRange) {
+  const parsed = parseRecordDate(value);
+  if (!parsed) return "—";
+  if (range && INTRADAY_RANGES.has(range)) {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
     timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00Z`));
+  }).format(parsed);
+}
+
+function axisDateLabel(value: string | undefined, range: FxRange) {
+  const parsed = parseRecordDate(value);
+  if (!parsed) return "—";
+  if (range === "1D") {
+    return new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+  if (range === "5D") {
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      hour: "numeric",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+  if (range === "1M" || range === "3M" || range === "6M") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+  if (range === "1Y" || range === "2Y" || range === "5Y") {
+    return new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      year: "2-digit",
+      timeZone: "UTC",
+    }).format(parsed);
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
 }
 
 function quoteTimeLabel(value?: string) {
@@ -106,20 +186,28 @@ function makeChartGeometry(records: FxRecord[], focusRate?: number) {
       points: "",
       positions: [] as Array<{ x: number; y: number }>,
       yForRate: () => 50,
+      ticks: [] as Array<{ rate: number; y: number }>,
     };
   }
 
   const values = records.map((item) => item.rate);
   if (Number.isFinite(focusRate)) values.push(Number(focusRate));
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const rawSpread = rawMax - rawMin || Math.max(Math.abs(rawMax) * 0.01, 0.01);
+  const min = rawMin - rawSpread * 0.06;
+  const max = rawMax + rawSpread * 0.06;
   const spread = max - min || 1;
   const yForRate = (rate: number) =>
-    Math.max(7, Math.min(93, 93 - ((rate - min) / spread) * 86));
+    Math.max(5, Math.min(95, 95 - ((rate - min) / spread) * 90));
   const positions = records.map((item, index) => ({
     x: (index / (records.length - 1)) * 100,
     y: yForRate(item.rate),
   }));
+  const ticks = Array.from({ length: 5 }, (_, index) => {
+    const rate = max - (spread * index) / 4;
+    return { rate, y: yForRate(rate) };
+  });
 
   return {
     points: positions
@@ -127,7 +215,18 @@ function makeChartGeometry(records: FxRecord[], focusRate?: number) {
       .join(" "),
     positions,
     yForRate,
+    ticks,
   };
+}
+
+function sampleAxisRecords(records: FxRecord[]) {
+  if (records.length === 0) return [];
+  const count = Math.min(5, records.length);
+  if (count === 1) return [records[0]];
+  return Array.from({ length: count }, (_, index) => {
+    const recordIndex = Math.round((index / (count - 1)) * (records.length - 1));
+    return records[recordIndex];
+  });
 }
 
 export function HolderDetail() {
@@ -219,14 +318,16 @@ export function HolderDetail() {
     () => makeChartGeometry(records, fx?.latest),
     [records, fx?.latest],
   );
-  const displayedY =
-    displayedRate === null ? 50 : chartGeometry.yForRate(displayedRate);
+  const axisRecords = useMemo(() => sampleAxisRecords(records), [records]);
+  const displayedY = displayedRate === null ? 50 : chartGeometry.yForRate(displayedRate);
+  const liveY = fx ? chartGeometry.yForRate(fx.latest) : 50;
   const displayedX = activeRecord
     ? chartGeometry.positions[activeIndex]?.x ?? 100
     : 100;
   const chartStyle = {
     "--fx-cursor-position": `${displayedX}%`,
     "--fx-price-position": `${displayedY}%`,
+    "--fx-live-position": `${liveY}%`,
   } as FxChartStyle;
 
   const queueChartPoint = (clientX: number, element: HTMLDivElement) => {
@@ -277,6 +378,10 @@ export function HolderDetail() {
     if (next === null) return;
     event.preventDefault();
     setInspectIndex(next);
+  };
+
+  const handleRangeChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setRange(event.target.value as FxRange);
   };
 
   return (
@@ -345,6 +450,15 @@ export function HolderDetail() {
                 <div>
                   <span className="fx-label">LOCAL CURRENCY VS U.S. DOLLAR</span>
                   <h2>{fx?.pair ?? payload?.fx?.pair ?? "FX chart"}</h2>
+                  {fx ? (
+                    <div className="fx-market-summary">
+                      <strong>{formatRate(fx.latest)}</strong>
+                      <span className={fx.changePercent < 0 ? "down" : "up"}>
+                        {fx.changePercent >= 0 ? "+" : ""}{fx.changePercent.toFixed(2)}%
+                      </span>
+                      <small>{range}</small>
+                    </div>
+                  ) : null}
                 </div>
                 {fx ? (
                   <div className="fx-latest">
@@ -352,28 +466,30 @@ export function HolderDetail() {
                       <span className={fx.liveStatus === "live" ? "fx-live-badge" : "fx-ref-badge"}>
                         {fx.liveStatus === "live" ? "LIVE" : "REFERENCE"}
                       </span>
-                      <strong>{formatRate(fx.latest)}</strong>
                     </div>
-                    <small>
-                      {quoteTimeLabel(fx.liveAsOf)} · {fx.changePercent >= 0 ? "+" : ""}
-                      {fx.changePercent.toFixed(2)}% over {range}
-                    </small>
+                    <small>{quoteTimeLabel(fx.liveAsOf)}</small>
                   </div>
                 ) : null}
               </div>
 
-              <div className="fx-range-tabs" role="group" aria-label="FX chart range">
-                {(["1M", "1Y", "5Y", "10Y", "MAX"] as FxRange[]).map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    className={range === item ? "active" : ""}
-                    aria-pressed={range === item}
-                    onClick={() => setRange(item)}
-                  >
-                    {item}
-                  </button>
-                ))}
+              <div className="fx-toolbar">
+                <div className="fx-chart-mode">
+                  <span className="fx-chart-mode-icon" aria-hidden="true">⌁</span>
+                  <div>
+                    <strong>MARKET RATE</strong>
+                    <small>Close/reference line · drag or swipe to inspect</small>
+                  </div>
+                </div>
+                <label className="fx-timeframe-control">
+                  <span>TIMEFRAME</span>
+                  <select value={range} onChange={handleRangeChange} aria-label="FX chart timeframe">
+                    {FX_TIMEFRAMES.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.value} · {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
 
               {loading && payload ? (
@@ -391,7 +507,7 @@ export function HolderDetail() {
                       aria-valuenow={Math.max(1, activeIndex + 1)}
                       aria-valuetext={
                         activeRecord
-                          ? `${recordDateLabel(activeRecord.date)}, ${formatRate(activeRecord.rate)}`
+                          ? `${recordDateLabel(activeRecord.date, range)}, ${formatRate(activeRecord.rate)}`
                           : `${fx.liveStatus === "live" ? "Live" : "Latest reference"}, ${formatRate(fx.latest)}`
                       }
                       onPointerDown={handlePointerDown}
@@ -410,45 +526,65 @@ export function HolderDetail() {
                         role="img"
                         aria-label={`${fx.pair} exchange-rate chart for ${range}`}
                       >
-                        <line className="grid-line" x1="0" x2="100" y1="25" y2="25" />
-                        <line className="grid-line" x1="0" x2="100" y1="50" y2="50" />
-                        <line className="grid-line" x1="0" x2="100" y1="75" y2="75" />
+                        {[5, 27.5, 50, 72.5, 95].map((y) => (
+                          <line key={`h-${y}`} className="grid-line" x1="0" x2="100" y1={y} y2={y} />
+                        ))}
+                        {[0, 20, 40, 60, 80, 100].map((x) => (
+                          <line key={`v-${x}`} className="grid-line vertical" x1={x} x2={x} y1="0" y2="100" />
+                        ))}
                         <line
-                          className="fx-focus-line"
-                          x1={displayedX}
-                          x2={displayedX}
-                          y1="0"
-                          y2="100"
-                        />
-                        <line
-                          className="fx-price-line"
-                          x1={displayedX}
+                          className="fx-live-line-chart"
+                          x1="0"
                           x2="100"
-                          y1={displayedY}
-                          y2={displayedY}
+                          y1={liveY}
+                          y2={liveY}
                         />
+                        {activeRecord ? (
+                          <>
+                            <line
+                              className="fx-focus-line"
+                              x1={displayedX}
+                              x2={displayedX}
+                              y1="0"
+                              y2="100"
+                            />
+                            <line
+                              className="fx-focus-horizontal"
+                              x1="0"
+                              x2="100"
+                              y1={displayedY}
+                              y2={displayedY}
+                            />
+                          </>
+                        ) : null}
                         <polyline points={chartGeometry.points} />
                       </svg>
+                    </div>
+
+                    <div className="fx-y-axis" aria-hidden="true">
+                      {chartGeometry.ticks.map((tick) => (
+                        <span key={`${tick.rate}-${tick.y}`} style={{ top: `${tick.y}%` }}>
+                          {formatRate(tick.rate)}
+                        </span>
+                      ))}
                     </div>
 
                     <div className="fx-price-tag" aria-live="polite">
                       <span>
                         {activeRecord
-                          ? recordDateLabel(activeRecord.date)
+                          ? recordDateLabel(activeRecord.date, range)
                           : fx.liveStatus === "live"
-                            ? "LIVE QUOTE"
-                            : "LATEST REF"}
+                            ? "LIVE"
+                            : "LATEST"}
                       </span>
                       <strong>{displayedRate === null ? "—" : formatRate(displayedRate)}</strong>
-                      <small>
-                        {activeRecord ? fx.pair : quoteTimeLabel(fx.liveAsOf)}
-                      </small>
                     </div>
                   </div>
-                  <div className="fx-chart-footer">
-                    <span>{recordDateLabel(records[0]?.date)}</span>
-                    <span>Drag / swipe to inspect</span>
-                    <span>{recordDateLabel(records.at(-1)?.date)}</span>
+
+                  <div className="fx-time-axis" aria-hidden="true">
+                    {axisRecords.map((record, index) => (
+                      <span key={`${record.date}-${index}`}>{axisDateLabel(record.date, range)}</span>
+                    ))}
                   </div>
                 </div>
               ) : (
@@ -461,8 +597,8 @@ export function HolderDetail() {
 
               {fx ? (
                 <p className="fx-source">
-                  Historical series: {fx.source}. {fx.cadence}. Current label: {fx.liveSource}.
-                  When a near-real-time quote is unavailable, the UI explicitly falls back to the latest reference observation.
+                  Historical series: {fx.source}. {fx.cadence}. Current quote label: {fx.liveSource}.
+                  The chart uses a close/reference line because the official-source fallback does not provide OHLC candles.
                 </p>
               ) : null}
             </section>
