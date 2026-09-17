@@ -427,7 +427,7 @@
   .fx-latest { width: 100%; text-align: left; }
   .fx-live-line { justify-content: flex-start; }
   .fx-chart-interactive { height: 230px; }
-  .fx-chart-plot { inset-right: 86px; }
+  .fx-chart-plot { right: 86px; }
   .fx-price-tag { width: 78px; padding-left: 7px; }
   .fx-price-tag strong { font-size: 11px; }
   .fx-chart-footer {
