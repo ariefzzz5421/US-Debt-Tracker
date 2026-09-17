@@ -6,8 +6,19 @@ export const revalidate = 3600;
 const FOREIGN_HOLDERS_URL =
   "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table5.txt";
 const FRANKFURTER_URL = "https://api.frankfurter.dev/v2/rates";
+const YAHOO_CHART_HOSTS = [
+  "https://query1.finance.yahoo.com/v8/finance/chart",
+  "https://query2.finance.yahoo.com/v8/finance/chart",
+];
 
-const COUNTRY_CURRENCY: Record<string, { code: string; name: string }> = {
+type FxRange = "1M" | "1Y" | "5Y" | "10Y" | "MAX";
+
+type CurrencyMeta = {
+  code: string;
+  name: string;
+};
+
+const COUNTRY_CURRENCY: Record<string, CurrencyMeta> = {
   Australia: { code: "AUD", name: "Australian Dollar" },
   Belgium: { code: "EUR", name: "Euro" },
   Brazil: { code: "BRL", name: "Brazilian Real" },
@@ -32,13 +43,37 @@ const COUNTRY_CURRENCY: Record<string, { code: string; name: string }> = {
   "United Kingdom": { code: "GBP", name: "British Pound" },
 };
 
+const COUNTRY_FLAG_PATHS: Record<string, string> = {
+  Belgium: "/flags/be.png",
+  Canada: "/flags/ca.png",
+  "Cayman Islands": "/flags/ky.png",
+  "China, Mainland": "/flags/cn.png",
+  France: "/flags/fr.png",
+  Ireland: "/flags/ie.png",
+  Japan: "/flags/jp.png",
+  Luxembourg: "/flags/lu.png",
+  Taiwan: "/flags/tw.png",
+  "United Kingdom": "/flags/gb.png",
+};
+
+const YAHOO_PAIR_OVERRIDES: Record<string, { symbol: string; invert: boolean }> = {
+  EUR: { symbol: "EURUSD=X", invert: true },
+  GBP: { symbol: "GBPUSD=X", invert: true },
+};
+
 type Holder = {
   rank: number;
   name: string;
   slug: string;
   value: number;
   previousValue: number;
-  currency: { code: string; name: string } | null;
+  currency: CurrencyMeta | null;
+  flagPath: string | null;
+};
+
+type FxRecord = {
+  date: string;
+  rate: number;
 };
 
 type FxRow = {
@@ -48,6 +83,23 @@ type FxRow = {
   rate?: number;
 };
 
+type YahooChartPayload = {
+  chart?: {
+    result?: Array<{
+      meta?: {
+        regularMarketPrice?: number;
+        regularMarketTime?: number;
+      };
+      timestamp?: number[];
+      indicators?: {
+        quote?: Array<{
+          close?: Array<number | null>;
+        }>;
+      };
+    }>;
+  };
+};
+
 function slugify(value: string) {
   return value
     .toLowerCase()
@@ -55,16 +107,20 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "");
 }
 
-async function fetchWithTimeout(url: string, timeoutMs: number) {
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number,
+  revalidateSeconds = 3600,
+) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, {
       headers: {
         Accept: "application/json, text/plain;q=0.9",
-        "User-Agent": "US-Debt-Tracker/1.0",
+        "User-Agent": "US-Debt-Tracker/1.1",
       },
-      next: { revalidate: 3600 },
+      next: { revalidate: revalidateSeconds },
       signal: controller.signal,
     });
   } finally {
@@ -113,6 +169,7 @@ async function fetchTopHolders() {
       rank: index + 1,
       slug: slugify(row.name),
       currency: COUNTRY_CURRENCY[row.name] ?? null,
+      flagPath: COUNTRY_FLAG_PATHS[row.name] ?? null,
     }));
 
   const totalForeign = Number(totalRow?.[1]) * 1_000_000_000;
@@ -128,30 +185,133 @@ async function fetchTopHolders() {
   };
 }
 
-function startForRange(range: string) {
+function startForRange(range: FxRange) {
+  if (range === "MAX") return "1999-01-04";
+
   const now = new Date();
   now.setUTCHours(0, 0, 0, 0);
   if (range === "1M") now.setUTCMonth(now.getUTCMonth() - 1);
   else if (range === "5Y") now.setUTCFullYear(now.getUTCFullYear() - 5);
+  else if (range === "10Y") now.setUTCFullYear(now.getUTCFullYear() - 10);
   else now.setUTCFullYear(now.getUTCFullYear() - 1);
   return now.toISOString().slice(0, 10);
 }
 
-async function fetchFx(code: string, range: string) {
+function yahooPair(code: string) {
+  return YAHOO_PAIR_OVERRIDES[code] ?? { symbol: `${code}=X`, invert: false };
+}
+
+function normalizeYahooRate(value: number, invert: boolean) {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const normalized = invert ? 1 / value : value;
+  return Number.isFinite(normalized) && normalized > 0 ? normalized : null;
+}
+
+async function fetchYahooPayload(
+  symbol: string,
+  query: string,
+  revalidateSeconds: number,
+) {
+  let lastError = "Yahoo Finance FX feed is unavailable";
+
+  for (const host of YAHOO_CHART_HOSTS) {
+    const response = await fetchWithTimeout(
+      `${host}/${encodeURIComponent(symbol)}?${query}`,
+      9_000,
+      revalidateSeconds,
+    );
+    if (!response.ok) {
+      lastError = `Yahoo Finance returned ${response.status}`;
+      continue;
+    }
+
+    const payload = (await response.json()) as YahooChartPayload;
+    if (payload.chart?.result?.[0]) return payload.chart.result[0];
+    lastError = "Yahoo Finance returned no FX chart result";
+  }
+
+  throw new Error(lastError);
+}
+
+async function fetchLiveFx(code: string) {
+  const pair = yahooPair(code);
+  const result = await fetchYahooPayload(
+    pair.symbol,
+    "range=1d&interval=5m&includePrePost=true",
+    60,
+  );
+  const rawRate = Number(result.meta?.regularMarketPrice);
+  const rate = normalizeYahooRate(rawRate, pair.invert);
+  if (rate === null) throw new Error(`No live USD/${code} quote was returned`);
+
+  const marketTime = Number(result.meta?.regularMarketTime);
+  const asOf = Number.isFinite(marketTime)
+    ? new Date(marketTime * 1000).toISOString()
+    : new Date().toISOString();
+
+  return {
+    rate,
+    asOf,
+    source: "Yahoo Finance FX market quote",
+  };
+}
+
+async function fetchYahooHistory(code: string, range: FxRange) {
+  const pair = yahooPair(code);
+  const yahooRange: Record<FxRange, string> = {
+    "1M": "1mo",
+    "1Y": "1y",
+    "5Y": "5y",
+    "10Y": "10y",
+    MAX: "max",
+  };
+  const interval = range === "1M" ? "1d" : range === "1Y" ? "1wk" : "1mo";
+  const result = await fetchYahooPayload(
+    pair.symbol,
+    `range=${yahooRange[range]}&interval=${interval}&includePrePost=false`,
+    3600,
+  );
+  const timestamps = result.timestamp ?? [];
+  const closes = result.indicators?.quote?.[0]?.close ?? [];
+
+  const records = timestamps
+    .map((timestamp, index) => {
+      const rawRate = Number(closes[index]);
+      const rate = normalizeYahooRate(rawRate, pair.invert);
+      return rate === null
+        ? null
+        : {
+            date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+            rate,
+          };
+    })
+    .filter((row): row is FxRecord => row !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (records.length < 2) {
+    throw new Error(`Not enough Yahoo USD/${code} observations`);
+  }
+
+  return records;
+}
+
+async function fetchFrankfurterFx(code: string, range: FxRange) {
   const params = new URLSearchParams({
     base: "USD",
     quotes: code,
     from: startForRange(range),
   });
   if (range === "1Y") params.set("group", "week");
-  if (range === "5Y") params.set("group", "month");
+  if (range === "5Y" || range === "10Y" || range === "MAX") {
+    params.set("group", "month");
+  }
 
   const response = await fetchWithTimeout(
     `${FRANKFURTER_URL}?${params.toString()}`,
     15_000,
   );
   if (!response.ok) {
-    throw new Error(`FX source returned ${response.status}`);
+    throw new Error(`Frankfurter returned ${response.status}`);
   }
 
   const rows = (await response.json()) as FxRow[];
@@ -166,18 +326,39 @@ async function fetchFx(code: string, range: string) {
     .sort((a, b) => a.date.localeCompare(b.date));
 
   if (records.length < 2) {
-    throw new Error(`Not enough USD/${code} observations`);
+    throw new Error(`Not enough Frankfurter USD/${code} observations`);
   }
 
   return records;
+}
+
+async function fetchFxHistory(code: string, range: FxRange) {
+  try {
+    return {
+      records: await fetchFrankfurterFx(code, range),
+      source: "Frankfurter — central-bank and official-source exchange-rate blend",
+      cadence: "Reference rates; frequency varies by contributing provider",
+    };
+  } catch {
+    return {
+      records: await fetchYahooHistory(code, range),
+      source: "Yahoo Finance historical FX chart",
+      cadence: "Market-history observations; interval is reduced for long ranges",
+    };
+  }
 }
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const slug = params.get("slug")?.toLowerCase() ?? null;
   const requestedRange = params.get("range")?.toUpperCase();
-  const range =
-    requestedRange === "1M" || requestedRange === "5Y" ? requestedRange : "1Y";
+  const range: FxRange =
+    requestedRange === "1M" ||
+    requestedRange === "5Y" ||
+    requestedRange === "10Y" ||
+    requestedRange === "MAX"
+      ? requestedRange
+      : "1Y";
 
   try {
     const data = await fetchTopHolders();
@@ -227,9 +408,12 @@ export async function GET(request: Request) {
     }
 
     try {
-      const records = await fetchFx(holder.currency.code, range);
-      const latest = records.at(-1)!;
-      const first = records[0];
+      const history = await fetchFxHistory(holder.currency.code, range);
+      const lastHistorical = history.records.at(-1)!;
+      const first = history.records[0];
+      const live = await fetchLiveFx(holder.currency.code).catch(() => null);
+      const latest = live?.rate ?? lastHistorical.rate;
+
       return NextResponse.json(
         {
           status: "official",
@@ -243,17 +427,19 @@ export async function GET(request: Request) {
             pair: `USD/${holder.currency.code}`,
             currencyName: holder.currency.name,
             range,
-            latest: latest.rate,
-            changePercent: ((latest.rate - first.rate) / first.rate) * 100,
-            records,
-            source:
-              "Frankfurter — central-bank and official-source exchange-rate blend",
-            cadence: "Reference rates; frequency varies by contributing provider",
+            latest,
+            liveStatus: live ? "live" : "reference",
+            liveAsOf: live?.asOf ?? `${lastHistorical.date}T00:00:00.000Z`,
+            liveSource: live?.source ?? history.source,
+            changePercent: ((latest - first.rate) / first.rate) * 100,
+            records: history.records,
+            source: history.source,
+            cadence: history.cadence,
           },
         },
         {
           headers: {
-            "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=21600",
+            "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
           },
         },
       );
