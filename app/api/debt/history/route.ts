@@ -5,6 +5,7 @@ export const revalidate = 21_600;
 
 const BASE_URL =
   "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od/debt_to_penny";
+const MAX_CLIENT_POINTS = 720;
 
 const RANGE_YEARS = {
   "5Y": 5,
@@ -13,6 +14,13 @@ const RANGE_YEARS = {
 } as const;
 
 type RangeKey = keyof typeof RANGE_YEARS | "MAX";
+
+type DebtRecord = {
+  recordDate: string;
+  totalDebt: number;
+  debtHeldPublic: number;
+  intragovernmental: number;
+};
 
 type RawDebtRecord = {
   record_date?: string;
@@ -32,6 +40,20 @@ function rangeStart(range: RangeKey) {
   date.setUTCHours(0, 0, 0, 0);
   date.setUTCFullYear(date.getUTCFullYear() - RANGE_YEARS[range]);
   return date.toISOString().slice(0, 10);
+}
+
+function downsample(records: DebtRecord[], maxPoints = MAX_CLIENT_POINTS) {
+  if (records.length <= maxPoints) return records;
+
+  const lastIndex = records.length - 1;
+  const indexes = new Set<number>([0, lastIndex]);
+  for (let index = 1; index < maxPoints - 1; index += 1) {
+    indexes.add(Math.round((index / (maxPoints - 1)) * lastIndex));
+  }
+
+  return [...indexes]
+    .sort((a, b) => a - b)
+    .map((index) => records[index]);
 }
 
 export async function GET(request: Request) {
@@ -75,12 +97,7 @@ export async function GET(request: Request) {
         intragovernmental: toNumber(row.intragov_hold_amt),
       }))
       .filter(
-        (row): row is {
-          recordDate: string;
-          totalDebt: number;
-          debtHeldPublic: number;
-          intragovernmental: number;
-        } =>
+        (row): row is DebtRecord =>
           Boolean(row.recordDate) &&
           row.totalDebt !== null &&
           row.debtHeldPublic !== null &&
@@ -91,6 +108,8 @@ export async function GET(request: Request) {
       throw new Error("Treasury API returned too few historical records");
     }
 
+    const clientRecords = downsample(records);
+
     return NextResponse.json(
       {
         status: "official",
@@ -98,7 +117,8 @@ export async function GET(request: Request) {
         source: "U.S. Treasury Fiscal Data — Debt to the Penny",
         cadence: "Published after each U.S. business day",
         fetchedAt: new Date().toISOString(),
-        records,
+        rawRecordCount: records.length,
+        records: clientRecords,
       },
       {
         headers: {
@@ -114,6 +134,7 @@ export async function GET(request: Request) {
         range,
         source: "U.S. Treasury Fiscal Data — Debt to the Penny",
         fetchedAt: new Date().toISOString(),
+        rawRecordCount: 0,
         records: [],
         notice:
           reason instanceof Error
