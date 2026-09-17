@@ -11,7 +11,17 @@ const YAHOO_CHART_HOSTS = [
   "https://query2.finance.yahoo.com/v8/finance/chart",
 ];
 
-type FxRange = "1M" | "1Y" | "5Y" | "10Y" | "MAX";
+type FxRange =
+  | "1D"
+  | "5D"
+  | "1M"
+  | "3M"
+  | "6M"
+  | "1Y"
+  | "2Y"
+  | "5Y"
+  | "10Y"
+  | "MAX";
 
 type CurrencyMeta = {
   code: string;
@@ -60,6 +70,21 @@ const YAHOO_PAIR_OVERRIDES: Record<string, { symbol: string; invert: boolean }> 
   EUR: { symbol: "EURUSD=X", invert: true },
   GBP: { symbol: "GBPUSD=X", invert: true },
 };
+
+const VALID_RANGES = new Set<FxRange>([
+  "1D",
+  "5D",
+  "1M",
+  "3M",
+  "6M",
+  "1Y",
+  "2Y",
+  "5Y",
+  "10Y",
+  "MAX",
+]);
+
+const INTRADAY_RANGES = new Set<FxRange>(["1D", "5D"]);
 
 type Holder = {
   rank: number;
@@ -118,7 +143,7 @@ async function fetchWithTimeout(
     return await fetch(url, {
       headers: {
         Accept: "application/json, text/plain;q=0.9",
-        "User-Agent": "US-Debt-Tracker/1.1",
+        "User-Agent": "US-Debt-Tracker/1.2",
       },
       next: { revalidate: revalidateSeconds },
       signal: controller.signal,
@@ -190,7 +215,12 @@ function startForRange(range: FxRange) {
 
   const now = new Date();
   now.setUTCHours(0, 0, 0, 0);
-  if (range === "1M") now.setUTCMonth(now.getUTCMonth() - 1);
+  if (range === "1D") now.setUTCDate(now.getUTCDate() - 1);
+  else if (range === "5D") now.setUTCDate(now.getUTCDate() - 5);
+  else if (range === "1M") now.setUTCMonth(now.getUTCMonth() - 1);
+  else if (range === "3M") now.setUTCMonth(now.getUTCMonth() - 3);
+  else if (range === "6M") now.setUTCMonth(now.getUTCMonth() - 6);
+  else if (range === "2Y") now.setUTCFullYear(now.getUTCFullYear() - 2);
   else if (range === "5Y") now.setUTCFullYear(now.getUTCFullYear() - 5);
   else if (range === "10Y") now.setUTCFullYear(now.getUTCFullYear() - 10);
   else now.setUTCFullYear(now.getUTCFullYear() - 1);
@@ -256,20 +286,29 @@ async function fetchLiveFx(code: string) {
   };
 }
 
+function yahooRangeConfig(range: FxRange) {
+  const configs: Record<FxRange, { range: string; interval: string; revalidate: number }> = {
+    "1D": { range: "1d", interval: "5m", revalidate: 60 },
+    "5D": { range: "5d", interval: "30m", revalidate: 300 },
+    "1M": { range: "1mo", interval: "1d", revalidate: 900 },
+    "3M": { range: "3mo", interval: "1d", revalidate: 1800 },
+    "6M": { range: "6mo", interval: "1d", revalidate: 1800 },
+    "1Y": { range: "1y", interval: "1d", revalidate: 3600 },
+    "2Y": { range: "2y", interval: "1wk", revalidate: 3600 },
+    "5Y": { range: "5y", interval: "1wk", revalidate: 3600 },
+    "10Y": { range: "10y", interval: "1mo", revalidate: 3600 },
+    MAX: { range: "max", interval: "1mo", revalidate: 3600 },
+  };
+  return configs[range];
+}
+
 async function fetchYahooHistory(code: string, range: FxRange) {
   const pair = yahooPair(code);
-  const yahooRange: Record<FxRange, string> = {
-    "1M": "1mo",
-    "1Y": "1y",
-    "5Y": "5y",
-    "10Y": "10y",
-    MAX: "max",
-  };
-  const interval = range === "1M" ? "1d" : range === "1Y" ? "1wk" : "1mo";
+  const config = yahooRangeConfig(range);
   const result = await fetchYahooPayload(
     pair.symbol,
-    `range=${yahooRange[range]}&interval=${interval}&includePrePost=false`,
-    3600,
+    `range=${config.range}&interval=${config.interval}&includePrePost=false`,
+    config.revalidate,
   );
   const timestamps = result.timestamp ?? [];
   const closes = result.indicators?.quote?.[0]?.close ?? [];
@@ -278,12 +317,14 @@ async function fetchYahooHistory(code: string, range: FxRange) {
     .map((timestamp, index) => {
       const rawRate = Number(closes[index]);
       const rate = normalizeYahooRate(rawRate, pair.invert);
-      return rate === null
-        ? null
-        : {
-            date: new Date(timestamp * 1000).toISOString().slice(0, 10),
-            rate,
-          };
+      if (rate === null) return null;
+      const timestampDate = new Date(timestamp * 1000);
+      return {
+        date: INTRADAY_RANGES.has(range)
+          ? timestampDate.toISOString()
+          : timestampDate.toISOString().slice(0, 10),
+        rate,
+      };
     })
     .filter((row): row is FxRecord => row !== null)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -295,13 +336,23 @@ async function fetchYahooHistory(code: string, range: FxRange) {
   return records;
 }
 
+function dedupeRecords(records: FxRecord[]) {
+  return Array.from(new Map(records.map((record) => [record.date, record])).values()).sort(
+    (a, b) => a.date.localeCompare(b.date),
+  );
+}
+
 async function fetchFrankfurterFx(code: string, range: FxRange) {
+  if (INTRADAY_RANGES.has(range)) {
+    throw new Error("Intraday range requires a market feed");
+  }
+
   const params = new URLSearchParams({
     base: "USD",
     quotes: code,
     from: startForRange(range),
   });
-  if (range === "1Y") params.set("group", "week");
+  if (range === "1Y" || range === "2Y") params.set("group", "week");
   if (range === "5Y" || range === "10Y" || range === "MAX") {
     params.set("group", "month");
   }
@@ -315,15 +366,16 @@ async function fetchFrankfurterFx(code: string, range: FxRange) {
   }
 
   const rows = (await response.json()) as FxRow[];
-  const records = rows
-    .filter(
-      (row) =>
-        Boolean(row.date) &&
-        row.quote?.toUpperCase() === code &&
-        Number.isFinite(row.rate),
-    )
-    .map((row) => ({ date: row.date!, rate: Number(row.rate) }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const records = dedupeRecords(
+    rows
+      .filter(
+        (row) =>
+          Boolean(row.date) &&
+          row.quote?.toUpperCase() === code &&
+          Number.isFinite(row.rate),
+      )
+      .map((row) => ({ date: row.date!, rate: Number(row.rate) })),
+  );
 
   if (records.length < 2) {
     throw new Error(`Not enough Frankfurter USD/${code} observations`);
@@ -333,6 +385,14 @@ async function fetchFrankfurterFx(code: string, range: FxRange) {
 }
 
 async function fetchFxHistory(code: string, range: FxRange) {
+  if (INTRADAY_RANGES.has(range)) {
+    return {
+      records: await fetchYahooHistory(code, range),
+      source: "Yahoo Finance historical FX chart",
+      cadence: range === "1D" ? "5-minute market observations" : "30-minute market observations",
+    };
+  }
+
   try {
     return {
       records: await fetchFrankfurterFx(code, range),
@@ -351,14 +411,8 @@ async function fetchFxHistory(code: string, range: FxRange) {
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const slug = params.get("slug")?.toLowerCase() ?? null;
-  const requestedRange = params.get("range")?.toUpperCase();
-  const range: FxRange =
-    requestedRange === "1M" ||
-    requestedRange === "5Y" ||
-    requestedRange === "10Y" ||
-    requestedRange === "MAX"
-      ? requestedRange
-      : "1Y";
+  const requestedRange = params.get("range")?.toUpperCase() as FxRange | undefined;
+  const range: FxRange = requestedRange && VALID_RANGES.has(requestedRange) ? requestedRange : "1Y";
 
   try {
     const data = await fetchTopHolders();
